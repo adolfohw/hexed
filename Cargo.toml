@@ -1,5 +1,5 @@
 [package]
-name = "hex"
+name = "hexed"
 version = "0.1.0"
 authors = ["Adolfo H. Wernke <adolfohw@gmail.com>"]
 edition = "2018"
