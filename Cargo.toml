@@ -3,9 +3,12 @@ name = "hexed"
 version = "0.1.0"
 authors = ["Adolfo H. Wernke <adolfohw@gmail.com>"]
 edition = "2018"
-description = "A rusty hexdump"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A Rusty hexdump"
+repository = "https://github.com/adolfohw/hexed"
+readme = "README.md"
+keywords = ["hexdump", "hex"]
+categories = ["command-line-interface", "command-line-utilities", "development-tools", "visualization"]
+license = "MIT"
 
 [dependencies]
 clap = { version = "2.33", default-features = false }
