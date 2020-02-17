@@ -1,123 +1,183 @@
+use clap::clap_app;
 use colored::Colorize;
-use std::{
-    env, fs,
-    io::{self, Write},
-    iter,
-};
+use std::{env, fs, iter};
 
-const ROW_SIZE: usize = 0x10;
-
-// Print without panicking
-macro_rules! safe_print {
-    (in $($color:ident)+: $($arg:tt)*) => {{
-        let msg = format!("{}", format_args!($($arg)*));
-        if write!(io::stdout(), "{}", msg$(.$color())+).is_err() {
-            return;
-        }
-    }};
-
-    ($($arg:tt)*) => {{
-        if write!(io::stdout(), "{}", format_args!($($arg)*)).is_err() {
-            return;
-        }
-    }};
-}
-
-macro_rules! safe_println {
-    () => {
-        safe_print!("\n");
-    };
-
-    (in $($color:ident)+: $($arg:tt)*) => {
-        safe_print!(in $($color)+: $($arg)*);
-        safe_println!();
-    };
-
+macro_rules! ceprint {
     ($($arg:tt)*) => {
-        safe_print!($($arg)*);
-        safe_println!();
+        let msg = format!("{}", format_args!($($arg)*));
+        eprint!("{}", msg.bright_red().on_black());
     }
 }
 
-macro_rules! safe_eprint {
-    ($($arg:tt)*) => {{
-        let msg = format!("{}", format_args!($($arg)*));
-        if write!(io::stderr(), "{}", msg.red()).is_err() {
-            return;
-        }
-    }};
-}
-
-macro_rules! safe_eprintln {
+macro_rules! ceprintln {
     () => {
-        safe_eprint!("\n");
+        eprintln!();
+        return;
     };
 
-    ($($arg:tt)*) => {
-        safe_eprint!($($arg)*);
-        safe_eprintln!();
-    };
+    ($($arg:tt)*) => {{
+        ceprint!($($arg)*);
+        ceprintln!();
+    }}
 }
 
 fn main() {
-    let filler: String = iter::repeat(' ').take(ROW_SIZE * 3).collect();
-    let path = match env::args().nth(1) {
-        Some(path) => path,
-        None => {
-            safe_eprintln!("You must provide a path");
+    // CLI
+    let app = clap_app!(hexed =>
+        (version: env!("CARGO_PKG_VERSION"))
+        (author: env!("CARGO_PKG_AUTHORS"))
+        (about: env!("CARGO_PKG_DESCRIPTION"))
+        (@arg FILE: * "The file to be dumped")
+        // Bytes config
+        (@arg LENGTH: -n --length [LENGTH] "Limits the amount of bytes to display")
+        (@arg OFFSET: -s --skip [OFFSET] "Skips the first offset bytes")
+        // Display config
+        (@arg OCTAL: -o --octal "Displays the bytes as octal numbers")
+        (@arg GUIDES: -G --("no-guides") "Disables offset guides")
+        (@arg COLORS: -C --("no-colors") "Disables colors in the output")
+        (@arg ASCII: -A --("no-ascii") "Disables the ASCII sidebar")
+    );
+
+    // Check for a valid FILE value being present
+    let matches = match app.get_matches_safe() {
+        Ok(matches) => matches,
+        Err(err) => {
+            eprintln!("{}", err.message);
             return;
         }
     };
-    let file = match fs::read(path) {
+    let path = matches.value_of("FILE").unwrap();
+    let file = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(_) => {
-            safe_eprintln!("Invalid path");
-            return;
-        }
+        Err(_) => ceprintln!("'{}' is not a valid path", path),
     };
 
-    // Header
-    safe_print!(in bold green: "  Offset ");
-    for offset in 0..ROW_SIZE {
-        safe_print!(in green: "{:02X} ", offset);
-    }
-    safe_println!();
+    // Config
+    let length = match matches.value_of("LENGTH") {
+        Some(len) => {
+            if let Ok(len) = len.parse() {
+                len
+            } else {
+                ceprintln!("'{}' is not a valid length", len);
+            }
+        }
+        None => file.len(),
+    };
+    let offset = match matches.value_of("OFFSET") {
+        Some(os) => {
+            if let Ok(os) = os.parse() {
+                os
+            } else {
+                ceprintln!("'{}' is not a valid offset", os);
+            }
+        }
+        None => 0_usize,
+    };
 
-    // Dump
-    let rows = file.len() / ROW_SIZE + (file.len() % ROW_SIZE).min(1);
-    for row in 0..rows {
-        // Offset magnitude
-        safe_print!(in green: "{:08X} ", row * ROW_SIZE);
-        // Row dump
-        let start = row * ROW_SIZE;
-        let end = (start + ROW_SIZE).min(file.len());
-        // Bytes
-        let mut safe_printed_bytes = 0;
-        for byte in &file[start..end] {
-            match byte {
-                // Null
-                0 => safe_print!(in bright_black: "{:02X} ", byte),
-                // Non-printable ASCII
-                0x01..=0x1F | 0x7F => safe_print!(in bright_yellow: "{:02X} ", byte),
-                // Printable ASCII
-                b' '..=b'~' => safe_print!(in bright_cyan: "{:02X} ", byte),
-                // Other
-                _ => safe_print!("{:02X} ", byte),
+    // Flags
+    let is_octal = matches.is_present("OCTAL");
+    let use_guides = !matches.is_present("GUIDES");
+    let use_colors = !matches.is_present("COLORS");
+    let show_sidebar = !matches.is_present("ASCII");
+
+    // Control
+    let row_size = if is_octal { 0o10 } else { 0x10 };
+    let num_size = if is_octal { 5 } else { 3 };
+    let filler: String = iter::repeat(' ').take(row_size * num_size).collect();
+
+    macro_rules! cprint {
+        (in $($color:ident)+: $($arg:tt)*) => {{
+            if use_colors {
+                let msg = format!("{}", format_args!($($arg)*));
+                print!("{}", msg$(.$color())+);
+            } else {
+                print!($($arg)*);
             }
-            safe_printed_bytes += 1;
-        }
-        if safe_printed_bytes < ROW_SIZE {
-            safe_print!("{}", &filler[0..(ROW_SIZE - safe_printed_bytes) * 3]);
-        }
-        safe_print!(" ");
-        // Text repr
-        for byte in &file[start..end] {
-            let mut ch = char::from(*byte);
-            if !ch.is_ascii_graphic() {
-                ch = ' ';
-            }
-            safe_print!(in bright_black: "{}", ch);
-        }
-        safe_println!();
+        }};
+
+        ($($arg:tt)*) => {
+            print!($($arg)*);
+        };
     }
+
+    macro_rules! cprintln {
+        () => {
+            cprint!("\n");
+        };
+
+        (in $($color:ident)+: $($arg:tt)*) => {
+            cprint!(in $($color)+: $($arg)*);
+            cprintln!();
+        };
+
+        ($($arg:tt)*) => {
+            cprint!($($arg)*);
+            cprintln!();
+        }
+    }
+
+    // Set for octal or hex
+    macro_rules! logic {
+        ($num_format:literal, $mag_format:literal) => {
+            // Header
+            if use_guides {
+                cprint!(in bold green: "  Offset ");
+                for offset in 0..row_size {
+                    cprint!(in green: $num_format, offset);
+                }
+                cprintln!();
+            }
+
+            // Dump
+            let rows = (length - offset) / row_size + ((length - offset) % row_size).min(1);
+            for row in 0..rows {
+                // Offset magnitude
+                if use_guides {
+                    cprint!(in green: $mag_format, row * row_size);
+                }
+
+                // Row dump
+                let start = offset + row * row_size;
+                let end = (start + row_size).min(length);
+
+                // Bytes
+                let mut printed_bytes = 0;
+                for byte in &file[start..end] {
+                    match byte {
+                        // Null
+                        0 => cprint!(in bright_black: $num_format, byte),
+                        // Non-printable ASCII
+                        0x01..=0x1F | 0x7F => cprint!(in bright_yellow: $num_format, byte),
+                        // Printable ASCII
+                        b' '..=b'~' => cprint!(in bright_cyan: $num_format, byte),
+                        // Other
+                        _ => cprint!($num_format, byte),
+                    }
+                    printed_bytes += 1;
+                }
+                if printed_bytes < row_size {
+                    cprint!("{}", &filler[0..(row_size - printed_bytes) * num_size]);
+                }
+                cprint!(" ");
+
+                // ASCII repr
+                if show_sidebar {
+                    for byte in &file[start..end] {
+                        let mut ch = char::from(*byte);
+                        if !ch.is_ascii_graphic() {
+                            ch = ' ';
+                        }
+                        cprint!(in bright_black: "{}", ch);
+                    }
+                }
+                cprintln!();
+            }
+        };
+    }
+    if is_octal {
+        logic!("{:04o} ", "{:08o} ");
+    } else {
+        logic!("{:02X} ", "{:08X} ");
+    }
+    cprintln!("{} bytes in {}", file.len(), path);
 }
