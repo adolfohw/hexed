@@ -6,13 +6,13 @@ A simple CLI to visualize the bytes of a file, in a similar fashion to `hexdump`
 
 ## Installation
 
-```ps
+```
 cargo install hexed
 ```
 
 ## Usage
 
-```ps
+```
 hexed path/to/file
 ```
 
@@ -20,7 +20,7 @@ hexed path/to/file
 
 Using a shameless copy-paste of `hexed --help`:
 
-```ps
+```
 FLAGS:
     -A, --no-ascii     Disables the ASCII sidebar
     -C, --no-colors    Disables colors in the output
